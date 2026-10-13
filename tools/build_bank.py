@@ -19,6 +19,9 @@ OUT = ROOT / "data" / "questions.json"
 # 考選部 PDF 用私用區字元當選項框 (A)(B)(C)(D)
 MARKS = ["", "", "", ""]
 LETTERS = "ABCD"
+SPLIT = ""     # 內部用：選項分隔
+IMG_TEXT = ""  # 內部用：此處文字是圖片，需人工轉錄
+OVERRIDES = ROOT / "data" / "overrides.json"
 
 SUBJECTS = {
     "民法": "民法概要",
@@ -52,44 +55,120 @@ def join_lines(lines):
     return out
 
 
+NOISE = re.compile(r"\s*(代號：\s*\d+|頁次：.*|（請接背面）|（背面）|（正面）|全一張|\d+\s*－\s*\d+)\s*")
+
+
 def clean(s):
-    lines = [
-        ln for ln in s.split("\n")
-        if not re.fullmatch(r"\s*(代號：\s*\d+|頁次：.*|（請接背面）|（背面）|（正面）|全一張)\s*", ln)
-    ]
+    lines = [re.sub(r"\s{2,}", " ", ln) for ln in s.split("\n") if not NOISE.fullmatch(ln)]
     return join_lines(lines)
 
 
-def parse_questions(path):
-    text = pdftotext(path)
-    start = text.find("乙、測驗題部分")
-    if start < 0:
-        raise ValueError(f"{path.name}：找不到測驗題部分")
-    body = text[start:]
-    questions = []
-    pos = body.find("\n1 ")
-    n = 1
-    while pos >= 0:
-        a = body.find(MARKS[0], pos)
-        if a < 0:
-            break
-        stem = clean(body[pos + len(f"\n{n} "):a])
-        opts = []
-        cur = a
-        for i in range(4):
-            nxt_mark = body.find(MARKS[i + 1], cur + 1) if i < 3 else -1
-            if i < 3:
-                end = nxt_mark
+def layout_from_images(path):
+    """106 年等卷：選項框是圖片而非文字。依座標重建版面文字，圖片位置換成標記字元。"""
+    import pymupdf
+    doc = pymupdf.open(path)
+    pages = []
+    for pg in doc:
+        items = []
+        for b in pg.get_text("dict")["blocks"]:
+            for l in b.get("lines", []):
+                for s in l["spans"]:
+                    if s["text"].strip():
+                        x0, y0, x1, y1 = s["bbox"]
+                        items.append((x0, (y0 + y1) / 2, s["text"], False))
+        for im in pg.get_image_info():
+            x0, y0, x1, y1 = im["bbox"]
+            if y1 - y0 > 16:
+                continue
+            if x1 - x0 <= 24:  # 只有選項框
+                items.append((x0, (y0 + y1) / 2, "", True))
+            else:  # 選項框連同選項文字一起是圖片，需人工轉錄（data/overrides.json）
+                items.append((x0, (y0 + y1) / 2, "" + IMG_TEXT, True))
+        items.sort(key=lambda t: (t[1], t[0]))
+        lines = []
+        for it in items:
+            if lines and abs(lines[-1][0] - it[1]) < 5:
+                lines[-1][1].append(it)
             else:
-                nq = body.find(f"\n{n + 1} ", cur)
-                end = nq if nq >= 0 else len(body)
-            opts.append(clean(body[cur + 1:end]))
-            cur = end
-        questions.append({"no": n, "q": stem, "options": opts})
-        n += 1
-        pos = body.find(f"\n{n} ", cur - 1) if cur < len(body) else -1
-        if pos >= 0 and body.find(MARKS[0], pos) < 0:
-            break
+                lines.append([it[1], [it]])
+        for _, row in lines:
+            row.sort(key=lambda t: t[0])
+            indent = int(row[0][0] / 6)
+            txt = ""
+            prev_x1 = None
+            for x0, _, t, is_mark in row:
+                if prev_x1 is not None and x0 - prev_x1 > 8:
+                    txt += "  "
+                txt += t
+                prev_x1 = x0 + (22 if is_mark else len(t) * 5)
+            pages.append(" " * indent + txt)
+        pages.append("\f")
+    text = "\n".join(pages)
+    # 依出現順序把  指定為 A、B、C、D（每題由題號切開後再編號）
+    return text
+
+
+def split_blocks(text, name):
+    """依題號（縮排最淺、編號連續）把測驗題切成一題一塊。"""
+    start = text.find("測驗題部分")
+    if start < 0:
+        raise ValueError("找不到測驗題部分")
+    lines = text[start:].replace("\f", "\n").split("\n")[1:]
+    num_re = re.compile(r"^(\s*)(\d{1,2})(?:\s+(.*))?$")
+    blocks, cur, base, n = [], None, None, 1
+    for ln in lines:
+        m = num_re.match(ln)
+        if m and int(m.group(2)) == n:
+            ind = len(m.group(1))
+            # 題號行：縮排不比第 1 題深太多，且題號後空白或接題幹
+            if base is None or ind <= base + 3:
+                if base is None:
+                    base = ind
+                cur = [m.group(3) or ""]
+                blocks.append(cur)
+                n += 1
+                continue
+        if cur is not None:
+            cur.append(ln)
+    return blocks
+
+
+def parse_questions(path):
+    text = pdftotext(path, layout=True)
+    if not any(m in text for m in MARKS):
+        text = layout_from_images(path)
+    questions = []
+    for i, block in enumerate(split_blocks(text, path.name), 1):
+        body = "\n".join(block)
+        # 圖片模式：依序把通用標記換成 A–D
+        k = 0
+        def repl(_):
+            nonlocal k
+            ch = MARKS[k] if k < 4 else ""
+            k += 1
+            return ch
+        body = re.sub("", repl, body)
+        # 依序找 A→B→C→D：標記須在行首或前有空白才算選項開頭；
+        # 選項內文引用的「(A)」「(B)」等則還原成文字
+        out, expect = [], 0
+        for idx, ch in enumerate(body):
+            if ch in MARKS or ch == "":
+                prev = body[idx - 1] if idx else "\n"
+                if expect < 4 and ch == MARKS[expect] and prev in " \n":
+                    out.append(SPLIT)
+                    expect += 1
+                elif ch in MARKS:
+                    out.append(f"({LETTERS[MARKS.index(ch)]})")
+                else:
+                    out.append(ch)
+            else:
+                out.append(ch)
+        parts = "".join(out).split(SPLIT)
+        if len(parts) != 5:
+            raise ValueError(f"第{i}題只找到 {len(parts) - 1} 個選項")
+        stem = clean(parts[0])
+        opts = [clean(p) for p in parts[1:]]
+        questions.append({"no": i, "q": stem, "options": opts})
     return questions
 
 
@@ -104,26 +183,31 @@ def parse_answers(path):
     notes = {}
     remark = text[text.find("備"):] if "備" in text else ""
     remark = remark.translate(str.maketrans("ＡＢＣＤ", "ABCD"))
-    for m in re.finditer(r"第\s*(\d+)\s*題([^。；\n]*)", remark):
+    # 例：「第19題答Ｂ給分，第27題答Ａ或Ｄ者均給分」「第17題一律給分」「第19題答Ａ或Ｂ或AB者均給分」
+    for m in re.finditer(r"第\s*(\d+)\s*題([^。；，,、\n]*)", remark):
         no, desc = int(m.group(1)), m.group(2)
         if "一律給分" in desc:
             notes[no] = {"accept": list(LETTERS), "note": "一律給分"}
-        else:
-            acc = re.findall(r"[ABCD]", desc.split("者")[0])
+        elif "給分" in desc:
+            acc = sorted(set(re.findall(r"[ABCD]", desc.split("者")[0].split("給分")[0])))
             if acc:
-                notes[no] = {"accept": acc, "note": f"更正：答{'或'.join(acc)}均給分"}
+                note = f"更正答案為 {acc[0]}" if len(acc) == 1 else f"更正：答{'或'.join(acc)}均給分"
+                notes[no] = {"accept": acc, "note": note}
     result = []
     for i, a in enumerate(answers, 1):
         if i in notes:
             result.append(notes[i])
         elif a == "#":
-            raise ValueError(f"{path.name} 第{i}題標註#但備註無法解析")
+            raise ValueError(f"{path.name} 第{i}題標註#但備註無法解析：{remark.strip()[:80]}")
         else:
             result.append({"accept": [a]})
     return result
 
 
 def main():
+    overrides = {}
+    if OVERRIDES.exists():
+        overrides = {k: v for k, v in json.loads(OVERRIDES.read_text(encoding="utf-8")).items() if not k.startswith("_")}
     bank = []
     problems = []
     for qpdf in sorted(PDF_DIR.glob("*.pdf")):
@@ -142,16 +226,27 @@ def main():
         if not ans_file:
             problems.append(f"{qpdf.name}：找不到答案檔")
             continue
-        qs = parse_questions(qpdf)
-        ans = parse_answers(ans_file)
+        try:
+            qs = parse_questions(qpdf)
+            ans = parse_answers(ans_file)
+        except Exception as e:
+            problems.append(f"{qpdf.name}：{e}")
+            continue
         if len(qs) != len(ans):
             problems.append(f"{qpdf.name}：題數 {len(qs)} 與答案數 {len(ans)} 不符")
             continue
         for q, a in zip(qs, ans):
+            qid = f"{year}-{code[-2:]}-{q['no']:02d}"
+            fix = overrides.pop(qid, None)
+            if fix:
+                q["q"] = fix.get("q", q["q"])
+                q["options"] = fix.get("options", q["options"])
+            if IMG_TEXT in q["q"] or any(IMG_TEXT in o for o in q["options"]):
+                problems.append(f"{qpdf.name} 第{q['no']}題（{qid}）：選項是圖片，需在 overrides.json 轉錄")
             if not q["q"] or any(not o for o in q["options"]):
-                problems.append(f"{qpdf.name} 第{q['no']}題：題目或選項為空")
+                problems.append(f"{qpdf.name} 第{q['no']}題（{qid}）：題目或選項為空")
             item = {
-                "id": f"{year}-{code[-2:]}-{q['no']:02d}",
+                "id": qid,
                 "year": year,
                 "subject": subj,
                 "no": q["no"],
@@ -163,6 +258,8 @@ def main():
                 item["note"] = a["note"]
             bank.append(item)
         print(f"{year} {subj}: {len(qs)} 題（答案：{ans_file.name}）")
+    for qid in overrides:
+        problems.append(f"overrides.json 的 {qid} 沒有對應的題目")
     OUT.parent.mkdir(exist_ok=True)
     OUT.write_text(json.dumps(bank, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"共 {len(bank)} 題 → {OUT.relative_to(ROOT)}")
