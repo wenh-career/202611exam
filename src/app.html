@@ -81,6 +81,8 @@ nav.tabs .count { font-family: var(--font-num); font-size: .75rem; color: var(--
 .qmeta { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: .78rem; color: var(--muted); align-items: center; }
 .qmeta .tag { color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 0 6px; }
 .qmeta .wrongtag { color: var(--bad); }
+.context { margin: 0; padding: 10px 12px; background: var(--soft); border-radius: 6px; font-family: var(--font-paper); font-size: .92rem; line-height: 1.75; color: var(--muted); }
+.context span { display: block; font-family: var(--font-ui); font-size: .72rem; letter-spacing: .08em; margin-bottom: 2px; }
 .stem { font-family: var(--font-paper); font-size: 1.08rem; line-height: 1.85; margin: 0; }
 .stem .no { font-family: var(--font-num); color: var(--accent); margin-right: 6px; }
 
@@ -129,7 +131,16 @@ table.stats td { font-family: var(--font-num); font-variant-numeric: tabular-num
 table.stats td:first-child { font-family: var(--font-ui); }
 .tablewrap { overflow-x: auto; }
 
-.exam-list { display: grid; gap: 8px; }
+.exam-list { display: grid; }
+.exam-row { display: grid; grid-template-columns: 5.5em 1fr; gap: 10px; align-items: center; padding-block: 8px; border-bottom: 1px solid var(--line); }
+.exam-year { display: grid; line-height: 1.3; }
+.exam-year b { font-size: 1.05rem; color: var(--accent); }
+.exam-year .hint { font-size: .68rem; }
+.exam-cells { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; min-width: 0; }
+.exam-cell { display: grid; gap: 2px; text-align: center; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 6px 2px; font-size: .78rem; line-height: 1.3; }
+.exam-cell span { font-size: .68rem; color: var(--muted); }
+.exam-cell.done { border-color: var(--pencil); }
+@media (max-width: 420px) { .exam-row { grid-template-columns: 1fr; gap: 4px; } }
 .exam-item {
   display: flex; justify-content: space-between; align-items: center; gap: 12px;
   background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; text-align: left;
@@ -196,6 +207,10 @@ const S = Object.assign({
   exams: {},     // "114-民法概要" -> {best, last, date}
 }, load() || {});
 S.years = S.years.filter(y => YEARS.includes(y));
+// 題庫新增的年度自動加入篩選
+const known = S.knownYears || S.years.slice();
+YEARS.forEach(y => { if (!known.includes(y) && !S.years.includes(y)) S.years.push(y); });
+S.knownYears = YEARS.slice();
 if (!S.years.length) S.years = YEARS.slice();
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
 
@@ -222,7 +237,12 @@ let current = null; // 目前作答狀態 {id, picked}
 function filtersHTML(showYears = true) {
   const subjChips = [["all", "全部科目"], ...SUBJECTS.map(s => [s, SHORT[s]])]
     .map(([v, t]) => `<button class="chip" data-subj="${v}" aria-pressed="${S.subj === v}">${t}</button>`).join("");
-  const yearChips = YEARS.map(y => `<button class="chip" data-year="${y}" aria-pressed="${S.years.includes(y)}">${y} 年</button>`).join("");
+  const allOn = S.years.length === YEARS.length;
+  const recent = YEARS.slice(0, 5);
+  const recentOn = S.years.length === recent.length && recent.every(y => S.years.includes(y));
+  const yearChips = `<button class="chip quick" data-years="all" aria-pressed="${allOn}">全部</button>` +
+    `<button class="chip quick" data-years="recent" aria-pressed="${recentOn}">近 5 年</button>` +
+    YEARS.map(y => `<button class="chip" data-year="${y}" aria-pressed="${!allOn && S.years.includes(y)}">${y}</button>`).join("");
   return `<div class="filters">
     <div class="chiprow"><span class="lbl">科目</span>${subjChips}</div>
     ${showYears ? `<div class="chiprow"><span class="lbl">年度</span>${yearChips}</div>` : ""}
@@ -230,9 +250,14 @@ function filtersHTML(showYears = true) {
 }
 function bindFilters(root, rerender) {
   root.querySelectorAll("[data-subj]").forEach(b => b.onclick = () => { S.subj = b.dataset.subj; current = null; save(); rerender(); });
+  root.querySelectorAll("[data-years]").forEach(b => b.onclick = () => {
+    S.years = b.dataset.years === "all" ? YEARS.slice() : YEARS.slice(0, 5);
+    current = null; save(); rerender();
+  });
   root.querySelectorAll("[data-year]").forEach(b => b.onclick = () => {
     const y = +b.dataset.year;
-    if (S.years.includes(y)) { if (S.years.length > 1) S.years = S.years.filter(v => v !== y); }
+    if (S.years.length === YEARS.length) S.years = [y];          // 從「全部」點單一年度：只選這年
+    else if (S.years.includes(y)) { if (S.years.length > 1) S.years = S.years.filter(v => v !== y); }
     else S.years.push(y);
     current = null; save(); rerender();
   });
@@ -267,6 +292,7 @@ function questionCard(q, { picked, label, showNo }) {
       ${label || ""}
       ${h && h.bad ? `<span class="wrongtag">錯過 ${h.bad} 次</span>` : ""}
     </div>
+    ${q.context ? `<p class="context"><span>上一題題目</span>${esc(q.context)}</p>` : ""}
     <p class="stem">${esc(q.q)}</p>
     <div class="opts">${opts}</div>
     ${verdict}
@@ -375,13 +401,15 @@ let exam = null; // {key, ids, answers:{}, pos, done}
 function renderExam() {
   const app = $("#app");
   if (!exam) {
-    const items = YEARS.flatMap(y => SUBJECTS.map(s => {
-      const k = y + "-" + s, r = S.exams[k];
-      const n = BANK.filter(q => q.year === y && q.subject === s).length;
-      if (!n) return "";
-      return `<button class="exam-item" data-exam="${k}"><span><b>${y} 年</b>　${s}<br><span class="hint num">${n} 題 · 每題 ${(50 / n).toFixed(0)} 分</span></span>
-        <span class="best">${r ? `最高 ${r.best} 分<br>上次 ${r.last} 分` : "尚未作答"}</span></button>`;
-    })).join("");
+    const items = YEARS.map(y => {
+      const n = BANK.filter(q => q.year === y && q.subject === SUBJECTS[0]).length;
+      const cells = SUBJECTS.map(s => {
+        const k = y + "-" + s, r = S.exams[k];
+        if (!BANK.some(q => q.year === y && q.subject === s)) return "";
+        return `<button class="exam-cell${r ? " done" : ""}" data-exam="${k}"><b>${SHORT[s]}</b><span class="num">${r ? `最高 ${r.best}` : "未作答"}</span></button>`;
+      }).join("");
+      return `<div class="exam-row"><div class="exam-year"><b class="num">${y}</b><span class="hint">${n} 題 · 每題 ${+(50 / n).toFixed(2)} 分</span></div><div class="exam-cells">${cells}</div></div>`;
+    }).join("");
     app.innerHTML = `<h2 class="section-title">挑一份考卷</h2>
       <p class="hint">照考試順序作答，交卷後才對答案。測驗題部分滿分 50 分，答錯的題目會收進錯題本。</p>
       <div class="exam-list">${items}</div>`;
@@ -407,7 +435,7 @@ function renderExam() {
   let head;
   if (exam.done) {
     const okN = exam.ids.filter(id => BY_ID[id].answer.includes(exam.answers[id])).length;
-    head = `<div class="card"><div class="score"><span class="big">${Math.round(okN * per * 10) / 10}</span><span>/ 50 分　答對 <b class="num">${okN}</b> / ${n} 題</span></div>
+    head = `<div class="card"><div class="score"><span class="big">${Math.round(okN * per * 100) / 100}</span><span>/ 50 分　答對 <b class="num">${okN}</b> / ${n} 題</span></div>
       <p class="hint">點下方題號可以逐題檢討。</p>
       <div class="actions"><button class="btn" id="examBack">回到考卷列表</button></div></div>`;
   } else {
@@ -425,6 +453,7 @@ function renderExam() {
   app.innerHTML = `<h2 class="section-title">${exam.key.replace("-", " 年　")}</h2>` + head +
     `<article class="card" style="margin-top:12px">
       <div class="qmeta"><span class="tag">${q.year} 年</span><span class="num">第 ${q.no} 題</span></div>
+      ${q.context ? `<p class="context"><span>上一題題目</span>${esc(q.context)}</p>` : ""}
       <p class="stem">${esc(q.q)}</p><div class="opts">${opts}</div>${done}
     </article>
     <div class="actions" style="margin-top:12px">
@@ -438,11 +467,11 @@ function renderExam() {
   app.querySelectorAll("[data-epick]").forEach(b => b.onclick = () => {
     exam.answers[q.id] = b.dataset.epick;
     if (exam.pos < n - 1) exam.pos++;
-    renderExam();
+    renderExam(); window.scrollTo({ top: 0 });
   });
-  app.querySelectorAll("[data-jump]").forEach(b => b.onclick = () => { exam.pos = +b.dataset.jump; renderExam(); });
-  $("#prev").onclick = () => { exam.pos--; renderExam(); };
-  $("#enext").onclick = () => { exam.pos++; renderExam(); };
+  app.querySelectorAll("[data-jump]").forEach(b => b.onclick = () => { exam.pos = +b.dataset.jump; renderExam(); window.scrollTo({ top: 0 }); });
+  $("#prev").onclick = () => { exam.pos--; renderExam(); window.scrollTo({ top: 0 }); };
+  $("#enext").onclick = () => { exam.pos++; renderExam(); window.scrollTo({ top: 0 }); };
   const sb = $("#submit"); if (sb) sb.onclick = () => {
     const left = n - Object.keys(exam.answers).length;
     $("#confirmBox").innerHTML = `<div class="confirm" style="margin-top:10px"><span>${left ? `還有 ${left} 題沒作答，` : ""}確定要交卷嗎？</span>
@@ -451,7 +480,7 @@ function renderExam() {
     $("#yes").onclick = () => {
       let okN = 0;
       exam.ids.forEach(id => { const q2 = BY_ID[id], a = exam.answers[id]; if (a) { if (record(q2, a)) okN++; } else { const h = S.hist[id] || (S.hist[id] = { n: 0, ok: 0, bad: 0 }); h.inWrong = true; } });
-      const score = Math.round(okN * per * 10) / 10;
+      const score = Math.round(okN * per * 100) / 100;
       const r = S.exams[exam.key] || { best: 0 };
       S.exams[exam.key] = { best: Math.max(r.best, score), last: score, date: new Date().toISOString().slice(0, 10) };
       exam.done = true; exam.pos = 0; save(); renderExam(); updateWrongCount(); window.scrollTo({ top: 0 });
@@ -503,7 +532,7 @@ document.addEventListener("keydown", e => {
     else if (e.key === "Enter" && current && current.picked) $("#next") && $("#next").click();
   }
 });
-$("#bankInfo").textContent = `${YEARS.slice().sort().join("、")} 年 · ${BANK.length} 題`;
+$("#bankInfo").textContent = `${YEARS[YEARS.length - 1]}–${YEARS[0]} 年 · ${BANK.length} 題`;
 const foot = document.createElement("p");
 foot.className = "foot";
 foot.innerHTML = `題目與標準答案取自考選部公告之專技普考不動產經紀人測驗題，已套用考選部更正答案。舊年度題目可能因法規修正而與現行規定不同，作答時請留意。`;

@@ -10,6 +10,7 @@ import json
 import re
 import subprocess
 import sys
+import unicodedata
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -60,7 +61,14 @@ NOISE = re.compile(r"\s*(代號：\s*\d+|頁次：.*|（請接背面）|（背�
 
 def clean(s):
     lines = [re.sub(r"\s{2,}", " ", ln) for ln in s.split("\n") if not NOISE.fullmatch(ln)]
-    return join_lines(lines)
+    out = join_lines(lines)
+    # 相容字（如 U+F901「更」）轉為標準字；舊卷私用區的編號轉回㈠㈡㈢㈣
+    out = unicodedata.normalize("NFC", out)
+    out = out.translate(str.maketrans({"\ue129": "㈠", "\ue12a": "㈡", "\ue12b": "㈢", "\ue12c": "㈣", "﹐": "，", "`": ""}))
+    # 版面模式會在全形標點旁留下空格
+    out = re.sub(r"\s+([，。、：；？！」』）])", r"\1", out)
+    out = re.sub(r"([「『（：；，。、])\s+", r"\1", out)
+    return out
 
 
 def layout_from_images(path):
@@ -256,6 +264,10 @@ def main():
             }
             if "note" in a:
                 item["note"] = a["note"]
+            # 「承上題」：附上前一題題幹，打散出題時才看得懂
+            if re.match(r"承(上|前)題", q["q"]) and bank and bank[-1]["id"].rsplit("-", 1)[0] == qid.rsplit("-", 1)[0]:
+                prev = bank[-1]
+                item["context"] = prev.get("context", "") + ("\n" if prev.get("context") else "") + prev["q"]
             bank.append(item)
         print(f"{year} {subj}: {len(qs)} 題（答案：{ans_file.name}）")
     for qid in overrides:

@@ -1,6 +1,6 @@
 # 經紀人刷題卡
 
-不動產經紀人考試（專技普考）測驗題刷題網站。題目與標準答案取自考選部公告的試題 PDF，已套用考選部更正答案。
+不動產經紀人考試（專技普考）測驗題刷題網站。收錄 100–114 年四科測驗題共 1,920 題。題目與標準答案取自考選部公告的試題 PDF，已套用考選部更正答案。
 
 ## 功能
 - **混合練習**：依科目、年度篩選，題目洗牌出題，一輪做完所有題目才重新洗牌
@@ -16,7 +16,7 @@
    - 答案：檔名含 `ANS`（標準答案）或 `MOD`（更正答案，會優先使用）
 2. 執行：
    ```
-   python3 tools/build_bank.py   # PDF → data/questions.json（需要 pdftotext）
+   python3 tools/build_bank.py   # PDF → data/questions.json（需要 pdftotext、pymupdf）
    python3 tools/build_site.py   # 題庫 → index.html
    ```
 3. commit 並 push，GitHub Pages 會自動更新。
@@ -24,6 +24,7 @@
 ## 檔案
 - `pdf/`：考選部原始 PDF
 - `data/questions.json`：解析後的題庫
+- `data/overrides.json`：PDF 文字層讀不到、依原卷影像人工轉錄的內容（106 年部分選項是圖片）
 - `src/app.html`：網頁樣板
 - `index.html`：建置後的網站（GitHub Pages 讀這個）
 - `tools/`：建置程式
