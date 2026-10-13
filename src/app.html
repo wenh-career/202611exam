@@ -1,0 +1,514 @@
+<title>經紀人刷題卡</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* 版面：單欄、手機優先；上方為科目與年度篩選，中間一張「試卡」題目卡，選項是劃記用的橢圓框 */
+:root {
+  --bg: #F3F4F6;
+  --card: #FFFFFF;
+  --ink: #1B2130;
+  --muted: #5D6476;
+  --line: #D9DCE3;
+  --soft: #ECEEF2;
+  --accent: #B0385F;      /* 試卡紅墨 */
+  --accent-soft: #F6E4EA;
+  --pencil: #2A2F3A;      /* 2B 鉛筆 */
+  --ok: #217A49;
+  --ok-soft: #E1F2E8;
+  --bad: #C4471E;
+  --bad-soft: #FBE7DE;
+  --font-ui: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --font-paper: "Noto Serif TC", "PMingLiU", "Songti TC", serif;
+  --font-num: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12151B; --card: #1A1E26; --ink: #E6E8ED; --muted: #9AA0AF; --line: #2D333E; --soft: #222731;
+    --accent: #E37FA3; --accent-soft: #3A2230; --pencil: #DCE0E8;
+    --ok: #5CC28C; --ok-soft: #1B3326; --bad: #F2895F; --bad-soft: #3B2219;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12151B; --card: #1A1E26; --ink: #E6E8ED; --muted: #9AA0AF; --line: #2D333E; --soft: #222731;
+  --accent: #E37FA3; --accent-soft: #3A2230; --pencil: #DCE0E8;
+  --ok: #5CC28C; --ok-soft: #1B3326; --bad: #F2895F; --bad-soft: #3B2219;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { background: var(--bg); color: var(--ink); }
+body { font-family: var(--font-ui); font-size: 15px; line-height: 1.6; margin: 0; }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wrap { max-width: 680px; margin: 0 auto; padding-inline: 16px; padding-block: 0 48px; }
+
+header.top {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+  background: var(--bg); border-bottom: 1px solid var(--line);
+}
+.top-inner { max-width: 680px; margin: 0 auto; padding-inline: 16px; padding-block: 12px 0; }
+.brand { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.brand h1 { font-family: var(--font-paper); font-weight: 700; font-size: 1.25rem; margin: 0; letter-spacing: .02em; }
+.brand h1 span { color: var(--accent); }
+.brand small { color: var(--muted); font-size: .8rem; }
+nav.tabs { display: flex; gap: 4px; margin-top: 8px; overflow-x: auto; }
+nav.tabs button {
+  border: 0; background: none; padding: 8px 12px; border-bottom: 2px solid transparent;
+  color: var(--muted); white-space: nowrap; font-weight: 500;
+}
+nav.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+nav.tabs .count { font-family: var(--font-num); font-size: .75rem; color: var(--accent); margin-left: 4px; }
+
+.filters { display: grid; gap: 8px; margin-block: 16px 12px; }
+.chiprow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.chiprow .lbl { font-size: .75rem; color: var(--muted); letter-spacing: .08em; width: 2.6em; }
+.chip {
+  border: 1px solid var(--line); background: var(--card); border-radius: 999px;
+  padding: 4px 12px; font-size: .85rem;
+}
+.chip[aria-pressed="true"] { background: var(--pencil); color: var(--bg); border-color: var(--pencil); }
+
+.progress { display: flex; align-items: center; gap: 10px; font-size: .8rem; color: var(--muted); margin-bottom: 12px; }
+.bar { flex: 1; height: 6px; background: var(--soft); border-radius: 3px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .3s; }
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+
+.card {
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  padding: 20px 18px; display: grid; gap: 16px;
+}
+.qmeta { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: .78rem; color: var(--muted); align-items: center; }
+.qmeta .tag { color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 0 6px; }
+.qmeta .wrongtag { color: var(--bad); }
+.stem { font-family: var(--font-paper); font-size: 1.08rem; line-height: 1.85; margin: 0; }
+.stem .no { font-family: var(--font-num); color: var(--accent); margin-right: 6px; }
+
+.opts { display: grid; gap: 8px; }
+.opt {
+  display: grid; grid-template-columns: 34px 1fr; gap: 10px; align-items: start; text-align: left;
+  background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
+  line-height: 1.65;
+}
+.opt:hover:not(:disabled) { border-color: var(--muted); }
+.opt:disabled { cursor: default; }
+.bubble {
+  width: 30px; height: 20px; border-radius: 50%; border: 1.5px solid var(--accent);
+  display: grid; place-items: center; font-family: var(--font-num); font-size: .72rem; color: var(--accent);
+  margin-top: 2px;
+}
+.opt.picked .bubble { background: var(--pencil); border-color: var(--pencil); color: var(--bg); }
+.opt.right { border-color: var(--ok); background: var(--ok-soft); }
+.opt.right .bubble { background: var(--ok); border-color: var(--ok); color: var(--card); }
+.opt.wrong { border-color: var(--bad); background: var(--bad-soft); }
+.opt.wrong .bubble { background: var(--bad); border-color: var(--bad); color: var(--card); }
+.opt span { min-width: 0; }
+
+.verdict { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font-size: .9rem; }
+.verdict b.ok { color: var(--ok); }
+.verdict b.bad { color: var(--bad); }
+.verdict .note { color: var(--muted); font-size: .82rem; }
+.verdict a { color: var(--muted); font-size: .82rem; }
+
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn { border: 1px solid var(--line); background: var(--card); border-radius: 8px; padding: 9px 16px; font-weight: 500; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--card); }
+.btn.ghost { background: none; }
+.btn:disabled { opacity: .45; cursor: default; }
+.hint { font-size: .75rem; color: var(--muted); }
+
+.empty { text-align: center; padding: 40px 16px; color: var(--muted); display: grid; gap: 12px; justify-items: center; }
+.empty h2 { font-family: var(--font-paper); color: var(--ink); font-size: 1.15rem; margin: 0; }
+
+.section-title { font-family: var(--font-paper); font-size: 1.05rem; margin: 20px 0 10px; }
+table.stats { width: 100%; border-collapse: collapse; font-size: .88rem; }
+table.stats th, table.stats td { padding: 8px 6px; border-bottom: 1px solid var(--line); text-align: right; }
+table.stats th:first-child, table.stats td:first-child { text-align: left; }
+table.stats th { color: var(--muted); font-weight: 500; font-size: .78rem; }
+table.stats td { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+table.stats td:first-child { font-family: var(--font-ui); }
+.tablewrap { overflow-x: auto; }
+
+.exam-list { display: grid; gap: 8px; }
+.exam-item {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; text-align: left;
+}
+.exam-item .best { font-family: var(--font-num); font-size: .82rem; color: var(--muted); white-space: nowrap; }
+
+.sheet { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 6px; }
+.cell {
+  border: 1px solid var(--line); border-radius: 6px; padding: 4px 0; text-align: center; background: var(--card);
+  font-family: var(--font-num); font-size: .78rem; line-height: 1.3;
+}
+.cell small { display: block; color: var(--muted); font-size: .7rem; }
+.cell.answered { border-color: var(--pencil); }
+.cell.ok { background: var(--ok-soft); border-color: var(--ok); }
+.cell.bad { background: var(--bad-soft); border-color: var(--bad); }
+.cell.cur { outline: 2px solid var(--accent); }
+
+.score { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.score .big { font-family: var(--font-num); font-size: 2.4rem; color: var(--accent); line-height: 1; }
+
+.confirm { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: .85rem; }
+.foot { margin-top: 28px; font-size: .75rem; color: var(--muted); line-height: 1.7; }
+.foot a { color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<header class="top">
+  <div class="top-inner">
+    <div class="brand">
+      <h1>經紀人<span>刷題卡</span></h1>
+      <small id="bankInfo"></small>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button id="tab-practice" role="tab" data-view="practice">混合練習</button>
+      <button id="tab-wrong" role="tab" data-view="wrong">錯題本<span class="count" id="wrongCount"></span></button>
+      <button id="tab-exam" role="tab" data-view="exam">整份模擬</button>
+      <button id="tab-stats" role="tab" data-view="stats">紀錄</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap" id="app"></main>
+
+<script>
+const BANK = /*__QUESTIONS__*/[];
+const SUBJECTS = ["民法概要", "不動產估價概要", "土地法與土地相關稅法概要", "不動產經紀相關法規概要"];
+const SHORT = { "民法概要": "民法", "不動產估價概要": "估價", "土地法與土地相關稅法概要": "土地法與稅法", "不動產經紀相關法規概要": "經紀法規" };
+const YEARS = [...new Set(BANK.map(q => q.year))].sort((a, b) => b - a);
+const BY_ID = Object.fromEntries(BANK.map(q => [q.id, q]));
+const L = "ABCD";
+const KEY = "realtor-quiz-v1";
+
+/* ---------- 儲存 ---------- */
+function load() {
+  try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.hist) return s; } catch (e) {}
+  return null;
+}
+const S = Object.assign({
+  view: "practice",
+  subj: "all",
+  years: YEARS.slice(),
+  hist: {},      // id -> {n, ok, bad, last, inWrong}
+  decks: {},     // scope -> {order, pos, round}
+  exams: {},     // "114-民法概要" -> {best, last, date}
+}, load() || {});
+S.years = S.years.filter(y => YEARS.includes(y));
+if (!S.years.length) S.years = YEARS.slice();
+function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+
+/* ---------- 共用 ---------- */
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+function shuffle(a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+function inScope(q) { return (S.subj === "all" || q.subject === S.subj) && S.years.includes(q.year); }
+function scopeKey() { return S.subj + "|" + S.years.slice().sort().join(","); }
+function record(q, letter) {
+  const h = S.hist[q.id] || (S.hist[q.id] = { n: 0, ok: 0, bad: 0 });
+  const correct = q.answer.includes(letter);
+  h.n++; correct ? h.ok++ : h.bad++;
+  h.last = correct ? 1 : 0;
+  if (!correct) h.inWrong = true;
+  return correct;
+}
+function wrongIds() { return BANK.filter(q => S.hist[q.id] && S.hist[q.id].inWrong).map(q => q.id); }
+function searchUrl(q) { return "https://www.google.com/search?q=" + encodeURIComponent(q.q.slice(0, 60) + " 不動產經紀人"); }
+
+let current = null; // 目前作答狀態 {id, picked}
+
+/* ---------- 篩選列 ---------- */
+function filtersHTML(showYears = true) {
+  const subjChips = [["all", "全部科目"], ...SUBJECTS.map(s => [s, SHORT[s]])]
+    .map(([v, t]) => `<button class="chip" data-subj="${v}" aria-pressed="${S.subj === v}">${t}</button>`).join("");
+  const yearChips = YEARS.map(y => `<button class="chip" data-year="${y}" aria-pressed="${S.years.includes(y)}">${y} 年</button>`).join("");
+  return `<div class="filters">
+    <div class="chiprow"><span class="lbl">科目</span>${subjChips}</div>
+    ${showYears ? `<div class="chiprow"><span class="lbl">年度</span>${yearChips}</div>` : ""}
+  </div>`;
+}
+function bindFilters(root, rerender) {
+  root.querySelectorAll("[data-subj]").forEach(b => b.onclick = () => { S.subj = b.dataset.subj; current = null; save(); rerender(); });
+  root.querySelectorAll("[data-year]").forEach(b => b.onclick = () => {
+    const y = +b.dataset.year;
+    if (S.years.includes(y)) { if (S.years.length > 1) S.years = S.years.filter(v => v !== y); }
+    else S.years.push(y);
+    current = null; save(); rerender();
+  });
+}
+
+/* ---------- 題目卡 ---------- */
+function questionCard(q, { picked, label, showNo }) {
+  const h = S.hist[q.id];
+  const answered = picked != null;
+  const opts = q.options.map((o, i) => {
+    const l = L[i];
+    let cls = "opt";
+    if (answered) {
+      if (q.answer.includes(l)) cls += " right";
+      else if (l === picked) cls += " wrong";
+    }
+    return `<button class="${cls}" data-pick="${l}" ${answered ? "disabled" : ""} aria-label="選 ${l}">
+      <i class="bubble">${l}</i><span>${esc(o)}</span></button>`;
+  }).join("");
+  let verdict = "";
+  if (answered) {
+    const ok = q.answer.includes(picked);
+    verdict = `<div class="verdict">
+      ${ok ? `<b class="ok">答對了</b>` : `<b class="bad">答錯了</b><span>正確答案：<b class="num">${q.answer.join(" 或 ")}</b></span>`}
+      ${q.note ? `<span class="note">考選部${esc(q.note)}</span>` : ""}
+      <a href="${searchUrl(q)}" target="_blank" rel="noopener">搜尋這題的詳解 ↗</a>
+    </div>`;
+  }
+  return `<article class="card">
+    <div class="qmeta">
+      <span class="tag">${q.year} 年</span><span>${SHORT[q.subject]}</span><span class="num">第 ${q.no} 題</span>
+      ${label || ""}
+      ${h && h.bad ? `<span class="wrongtag">錯過 ${h.bad} 次</span>` : ""}
+    </div>
+    <p class="stem">${esc(q.q)}</p>
+    <div class="opts">${opts}</div>
+    ${verdict}
+  </article>`;
+}
+
+/* ---------- 混合練習 ---------- */
+function getDeck() {
+  const ids = BANK.filter(inScope).map(q => q.id);
+  const k = scopeKey();
+  let d = S.decks[k];
+  const valid = d && d.order.length === ids.length && d.order.every(id => BY_ID[id]);
+  if (!valid) {
+    // 新題庫或範圍改變：已做過的先排後面，未做過的洗牌在前
+    const fresh = shuffle(ids.filter(id => !S.hist[id]));
+    const done = shuffle(ids.filter(id => S.hist[id]));
+    d = S.decks[k] = { order: fresh.concat(done), pos: 0, round: 1 };
+    if (!fresh.length) d.round = 2;
+    save();
+  }
+  return d;
+}
+function renderPractice() {
+  const app = $("#app");
+  const d = getDeck();
+  const total = d.order.length;
+  let body;
+  if (d.pos >= total) {
+    const okN = d.order.filter(id => S.hist[id] && S.hist[id].last === 1).length;
+    body = `<div class="card empty">
+      <h2>這個範圍的 ${total} 題全部做完了</h2>
+      <p>最近一次作答答對 <b class="num">${okN}</b> / ${total} 題。錯的題目都在錯題本裡。</p>
+      <div class="actions"><button class="btn primary" id="reshuffle">重新洗牌，開始第 ${d.round + 1} 輪</button></div>
+    </div>`;
+  } else {
+    const id = d.order[d.pos];
+    if (!current || current.id !== id) current = { id, picked: null };
+    const q = BY_ID[id];
+    body = questionCard(q, { picked: current.picked, label: d.round > 1 ? `<span>第 ${d.round} 輪</span>` : "" }) +
+      `<div class="actions" style="margin-top:12px">
+        <button class="btn primary" id="next" ${current.picked ? "" : "disabled"}>下一題</button>
+        <button class="btn ghost" id="skip" ${current.picked ? "hidden" : ""}>先跳過</button>
+      </div>
+      <p class="hint">鍵盤：A–D 或 1–4 作答，Enter 下一題</p>`;
+  }
+  app.innerHTML = filtersHTML() +
+    `<div class="progress"><span class="num">${Math.min(d.pos, total)} / ${total}</span><div class="bar"><i style="width:${total ? d.pos / total * 100 : 0}%"></i></div><span>本輪進度</span></div>` + body;
+  bindFilters(app, renderPractice);
+  app.querySelectorAll("[data-pick]").forEach(b => b.onclick = () => pick(b.dataset.pick));
+  const nx = $("#next"); if (nx) nx.onclick = next;
+  const sk = $("#skip"); if (sk) sk.onclick = () => {
+    // 跳過：移到本輪最後面
+    const id = d.order.splice(d.pos, 1)[0]; d.order.push(id); current = null; save(); renderPractice();
+  };
+  const rs = $("#reshuffle"); if (rs) rs.onclick = () => { d.order = shuffle(d.order); d.pos = 0; d.round++; current = null; save(); renderPractice(); };
+  updateWrongCount();
+}
+function pick(l) {
+  if (!current || current.picked) return;
+  const q = BY_ID[current.id];
+  current.picked = l;
+  record(q, l);
+  save();
+  rerender();
+}
+function next() {
+  if (!current || !current.picked) return;
+  if (S.view === "practice") { const d = getDeck(); d.pos++; }
+  if (S.view === "wrong") {
+    const q = BY_ID[current.id];
+    wrongQueue.shift();
+    if (q.answer.includes(current.picked)) S.hist[q.id].inWrong = false;
+    else wrongQueue.push(q.id); // 答錯：排到最後再出現
+  }
+  current = null; save(); rerender();
+  window.scrollTo({ top: 0 });
+}
+
+/* ---------- 錯題本 ---------- */
+let wrongQueue = [];
+function renderWrong() {
+  const app = $("#app");
+  const all = wrongIds().filter(id => S.subj === "all" || BY_ID[id].subject === S.subj);
+  wrongQueue = wrongQueue.filter(id => all.includes(id) || (current && current.id === id));
+  if (!wrongQueue.length) wrongQueue = shuffle(all);
+  let body;
+  if (!all.length && !(current && current.picked)) {
+    body = `<div class="card empty"><h2>錯題本是空的</h2><p>練習時答錯的題目會自動收進來。在這裡答對一次就會移出。</p></div>`;
+  } else {
+    const id = wrongQueue[0];
+    if (!current || current.id !== id) current = { id, picked: null };
+    body = questionCard(BY_ID[id], { picked: current.picked }) +
+      `<div class="actions" style="margin-top:12px"><button class="btn primary" id="next" ${current.picked ? "" : "disabled"}>下一題</button></div>
+      <p class="hint">答對就移出錯題本；答錯會留著，之後再出現。</p>`;
+  }
+  app.innerHTML = filtersHTML(false) +
+    `<div class="progress"><span>錯題本剩 <b class="num">${all.length}</b> 題</span></div>` + body;
+  bindFilters(app, renderWrong);
+  app.querySelectorAll("[data-pick]").forEach(b => b.onclick = () => pick(b.dataset.pick));
+  const nx = $("#next"); if (nx) nx.onclick = next;
+  updateWrongCount();
+}
+
+/* ---------- 整份模擬 ---------- */
+let exam = null; // {key, ids, answers:{}, pos, done}
+function renderExam() {
+  const app = $("#app");
+  if (!exam) {
+    const items = YEARS.flatMap(y => SUBJECTS.map(s => {
+      const k = y + "-" + s, r = S.exams[k];
+      const n = BANK.filter(q => q.year === y && q.subject === s).length;
+      if (!n) return "";
+      return `<button class="exam-item" data-exam="${k}"><span><b>${y} 年</b>　${s}<br><span class="hint num">${n} 題 · 每題 ${(50 / n).toFixed(0)} 分</span></span>
+        <span class="best">${r ? `最高 ${r.best} 分<br>上次 ${r.last} 分` : "尚未作答"}</span></button>`;
+    })).join("");
+    app.innerHTML = `<h2 class="section-title">挑一份考卷</h2>
+      <p class="hint">照考試順序作答，交卷後才對答案。測驗題部分滿分 50 分，答錯的題目會收進錯題本。</p>
+      <div class="exam-list">${items}</div>`;
+    app.querySelectorAll("[data-exam]").forEach(b => b.onclick = () => {
+      const [y, s] = [+b.dataset.exam.split("-")[0], b.dataset.exam.slice(4)];
+      const ids = BANK.filter(q => q.year === y && q.subject === s).sort((a, c) => a.no - c.no).map(q => q.id);
+      exam = { key: b.dataset.exam, ids, answers: {}, pos: 0, done: false };
+      renderExam();
+    });
+    return;
+  }
+  const q = BY_ID[exam.ids[exam.pos]];
+  const n = exam.ids.length, per = 50 / n;
+  const answeredN = Object.keys(exam.answers).length;
+  const sheet = exam.ids.map((id, i) => {
+    const a = exam.answers[id];
+    let cls = "cell";
+    if (exam.done) cls += BY_ID[id].answer.includes(a) ? " ok" : " bad";
+    else if (a) cls += " answered";
+    if (i === exam.pos) cls += " cur";
+    return `<button class="${cls}" data-jump="${i}">${i + 1}<small>${a || "–"}</small></button>`;
+  }).join("");
+  let head;
+  if (exam.done) {
+    const okN = exam.ids.filter(id => BY_ID[id].answer.includes(exam.answers[id])).length;
+    head = `<div class="card"><div class="score"><span class="big">${Math.round(okN * per * 10) / 10}</span><span>/ 50 分　答對 <b class="num">${okN}</b> / ${n} 題</span></div>
+      <p class="hint">點下方題號可以逐題檢討。</p>
+      <div class="actions"><button class="btn" id="examBack">回到考卷列表</button></div></div>`;
+  } else {
+    head = `<div class="progress"><span class="num">已作答 ${answeredN} / ${n}</span><div class="bar"><i style="width:${answeredN / n * 100}%"></i></div></div>`;
+  }
+  const opts = q.options.map((o, i) => {
+    const l = L[i], a = exam.answers[q.id];
+    let cls = "opt";
+    if (exam.done) { if (q.answer.includes(l)) cls += " right"; else if (l === a) cls += " wrong"; }
+    else if (l === a) cls += " picked";
+    return `<button class="${cls}" data-epick="${l}" ${exam.done ? "disabled" : ""}><i class="bubble">${l}</i><span>${esc(o)}</span></button>`;
+  }).join("");
+  const done = exam.done ? `<div class="verdict">${q.answer.includes(exam.answers[q.id]) ? `<b class="ok">答對</b>` : `<b class="bad">${exam.answers[q.id] ? "答錯" : "未作答"}</b><span>正確答案：<b class="num">${q.answer.join(" 或 ")}</b></span>`}
+    ${q.note ? `<span class="note">考選部${esc(q.note)}</span>` : ""}<a href="${searchUrl(q)}" target="_blank" rel="noopener">搜尋這題的詳解 ↗</a></div>` : "";
+  app.innerHTML = `<h2 class="section-title">${exam.key.replace("-", " 年　")}</h2>` + head +
+    `<article class="card" style="margin-top:12px">
+      <div class="qmeta"><span class="tag">${q.year} 年</span><span class="num">第 ${q.no} 題</span></div>
+      <p class="stem">${esc(q.q)}</p><div class="opts">${opts}</div>${done}
+    </article>
+    <div class="actions" style="margin-top:12px">
+      <button class="btn" id="prev" ${exam.pos === 0 ? "disabled" : ""}>上一題</button>
+      <button class="btn ${exam.done ? "" : "primary"}" id="enext" ${exam.pos === n - 1 ? "disabled" : ""}>下一題</button>
+      ${exam.done ? "" : `<button class="btn ghost" id="submit">交卷</button>`}
+    </div>
+    <div id="confirmBox"></div>
+    <h3 class="section-title">答案卡</h3><div class="sheet">${sheet}</div>
+    ${exam.done ? "" : `<p class="hint" style="margin-top:12px"><button class="btn ghost" id="quit">放棄這份考卷</button></p>`}`;
+  app.querySelectorAll("[data-epick]").forEach(b => b.onclick = () => {
+    exam.answers[q.id] = b.dataset.epick;
+    if (exam.pos < n - 1) exam.pos++;
+    renderExam();
+  });
+  app.querySelectorAll("[data-jump]").forEach(b => b.onclick = () => { exam.pos = +b.dataset.jump; renderExam(); });
+  $("#prev").onclick = () => { exam.pos--; renderExam(); };
+  $("#enext").onclick = () => { exam.pos++; renderExam(); };
+  const sb = $("#submit"); if (sb) sb.onclick = () => {
+    const left = n - Object.keys(exam.answers).length;
+    $("#confirmBox").innerHTML = `<div class="confirm" style="margin-top:10px"><span>${left ? `還有 ${left} 題沒作答，` : ""}確定要交卷嗎？</span>
+      <button class="btn primary" id="yes">交卷</button><button class="btn ghost" id="no">繼續作答</button></div>`;
+    $("#no").onclick = () => { $("#confirmBox").innerHTML = ""; };
+    $("#yes").onclick = () => {
+      let okN = 0;
+      exam.ids.forEach(id => { const q2 = BY_ID[id], a = exam.answers[id]; if (a) { if (record(q2, a)) okN++; } else { const h = S.hist[id] || (S.hist[id] = { n: 0, ok: 0, bad: 0 }); h.inWrong = true; } });
+      const score = Math.round(okN * per * 10) / 10;
+      const r = S.exams[exam.key] || { best: 0 };
+      S.exams[exam.key] = { best: Math.max(r.best, score), last: score, date: new Date().toISOString().slice(0, 10) };
+      exam.done = true; exam.pos = 0; save(); renderExam(); updateWrongCount(); window.scrollTo({ top: 0 });
+    };
+  };
+  const eb = $("#examBack"); if (eb) eb.onclick = () => { exam = null; renderExam(); };
+  const qt = $("#quit"); if (qt) qt.onclick = () => { exam = null; renderExam(); };
+}
+
+/* ---------- 紀錄 ---------- */
+function renderStats() {
+  const app = $("#app");
+  const rows = SUBJECTS.map(s => {
+    const qs = BANK.filter(q => q.subject === s);
+    const seen = qs.filter(q => S.hist[q.id]);
+    const ok = seen.reduce((t, q) => t + S.hist[q.id].ok, 0), n = seen.reduce((t, q) => t + S.hist[q.id].n, 0);
+    const wrong = qs.filter(q => S.hist[q.id] && S.hist[q.id].inWrong).length;
+    return `<tr><td>${SHORT[s]}</td><td>${seen.length} / ${qs.length}</td><td>${n ? Math.round(ok / n * 100) + "%" : "–"}</td><td>${wrong}</td></tr>`;
+  }).join("");
+  const exams = Object.entries(S.exams).sort().map(([k, r]) => `<tr><td>${k.replace("-", " 年 ")}</td><td>${r.best}</td><td>${r.last}</td><td>${r.date}</td></tr>`).join("");
+  app.innerHTML = `<h2 class="section-title">各科進度</h2>
+    <div class="tablewrap"><table class="stats"><thead><tr><th>科目</th><th>做過</th><th>答對率</th><th>錯題本</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <h2 class="section-title">整份模擬成績</h2>
+    ${exams ? `<div class="tablewrap"><table class="stats"><thead><tr><th>考卷</th><th>最高</th><th>上次</th><th>日期</th></tr></thead><tbody>${exams}</tbody></table></div>` : `<p class="hint">還沒有模擬考紀錄。</p>`}
+    <h2 class="section-title">清除紀錄</h2>
+    <p class="hint">作答紀錄只存在這台裝置的瀏覽器。換裝置或清除瀏覽器資料，紀錄不會跟著走。</p>
+    <div id="resetBox"><button class="btn ghost" id="reset">清除所有作答紀錄</button></div>`;
+  $("#reset").onclick = () => {
+    $("#resetBox").innerHTML = `<div class="confirm"><span>所有進度、錯題本和成績都會清空，無法復原。</span>
+      <button class="btn primary" id="yes">確定清除</button><button class="btn ghost" id="no">取消</button></div>`;
+    $("#no").onclick = renderStats;
+    $("#yes").onclick = () => { S.hist = {}; S.decks = {}; S.exams = {}; current = null; wrongQueue = []; save(); renderStats(); updateWrongCount(); };
+  };
+}
+
+/* ---------- 切換 ---------- */
+function updateWrongCount() { const n = wrongIds().length; $("#wrongCount").textContent = n ? n : ""; }
+function rerender() {
+  document.querySelectorAll("nav.tabs button").forEach(b => b.setAttribute("aria-selected", b.dataset.view === S.view));
+  ({ practice: renderPractice, wrong: renderWrong, exam: renderExam, stats: renderStats })[S.view]();
+}
+document.querySelectorAll("nav.tabs button").forEach(b => b.onclick = () => { S.view = b.dataset.view; current = null; save(); rerender(); window.scrollTo({ top: 0 }); });
+document.addEventListener("keydown", e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toUpperCase();
+  const idx = "ABCD".indexOf(k) >= 0 ? "ABCD".indexOf(k) : "1234".indexOf(k);
+  if (S.view === "practice" || S.view === "wrong") {
+    if (idx >= 0) pick(L[idx]);
+    else if (e.key === "Enter" && current && current.picked) $("#next") && $("#next").click();
+  }
+});
+$("#bankInfo").textContent = `${YEARS.slice().sort().join("、")} 年 · ${BANK.length} 題`;
+const foot = document.createElement("p");
+foot.className = "foot";
+foot.innerHTML = `題目與標準答案取自考選部公告之專技普考不動產經紀人測驗題，已套用考選部更正答案。舊年度題目可能因法規修正而與現行規定不同，作答時請留意。`;
+document.querySelector("main").after(foot);
+foot.style.cssText = "max-width:680px;margin:0 auto;padding-inline:16px;padding-block:0 32px";
+updateWrongCount();
+rerender();
+</script>
